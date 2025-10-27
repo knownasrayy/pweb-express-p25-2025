@@ -1,32 +1,23 @@
-// src/modules/auth/auth.service.ts
 import prisma from '../../prisma';
 import { hashPassword, comparePassword } from '../../utils/password.utils';
 import { generateToken } from '../../utils/jwt.utils';
 
-// Logika untuk Register
 export const registerUser = async (userData: any) => {
-  const existingUser = await prisma.user.findUnique({
-    where: { email: userData.email },
-  });
-  if (existingUser) {
-    throw new Error('Email already registered');
-  }
 
   const hashedPassword = await hashPassword(userData.password);
 
   const user = await prisma.user.create({
     data: {
-      username: userData.username, // <-- BERUBAH
+      username: userData.username,
       email: userData.email,
       password: hashedPassword,
     },
-    select: { id: true, username: true, email: true }, // <-- BERUBAH
+    select: { id: true, username: true, email: true },
   });
 
   return user;
 };
 
-// Logika untuk Login
 export const loginUser = async (loginData: any) => {
   const user = await prisma.user.findUnique({
     where: { email: loginData.email },
@@ -40,11 +31,10 @@ export const loginUser = async (loginData: any) => {
   return { token };
 };
 
-// Logika untuk Get Me
 export const getProfile = async (userId: string) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, username: true, email: true, createdAt: true }, // <-- BERUBAH
+    select: { id: true, username: true, email: true, createdAt: true },
   });
   if (!user) { throw new Error('User not found'); }
   return user;

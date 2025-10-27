@@ -1,18 +1,17 @@
-// src/modules/book/book.service.ts
 import prisma from '../../prisma';
 import { Prisma } from '@prisma/client';
 
-// Interface untuk filter
+
 interface BookQueryOptions {
   page?: number;
   limit?: number;
   search?: string;
   genreId?: string;
+  sortBy?: string;
+  orderBy?: string;
 }
 
-// Create
 export const createBook = async (data: any) => {
-  // @unique('title') di schema.prisma akan menangani error duplikat
   const book = await prisma.book.create({
     data: {
       title: data.title,
@@ -28,17 +27,22 @@ export const createBook = async (data: any) => {
   return book;
 };
 
-// Get All (dengan Filter & Pagination)
 export const getAllBooks = async (options: BookQueryOptions) => {
-  const { page = 1, limit = 10, search, genreId } = options;
+  const {
+    page = 1,
+    limit = 10,
+    search,
+    genreId,
+    sortBy = 'createdAt',
+    orderBy = 'desc',
+  } = options;
 
   const pageNum = Number(page);
   const limitNum = Number(limit);
   const skip = (pageNum - 1) * limitNum;
 
-  // 1. Buat kondisi 'where'
   const where: Prisma.BookWhereInput = {
-    deletedAt: null, // <-- Penting: Hanya ambil yang tidak di-soft-delete
+    deletedAt: null,
   };
   if (search) {
     where.title = {
@@ -50,26 +54,31 @@ export const getAllBooks = async (options: BookQueryOptions) => {
     where.genreId = genreId;
   }
 
-  // 2. Ambil data buku
+  const allowedSortFields = ['title', 'publicationYear', 'price', 'createdAt', 'writer'];
+  const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+  const sortOrder = orderBy.toLowerCase() === 'asc' ? 'asc' : 'desc';
+
   const books = await prisma.book.findMany({
     where: where,
     skip: skip,
     take: limitNum,
     include: {
       genre: {
-        select: { name: true }, // Ambil nama genre
+        select: { name: true },
       },
     },
+
     orderBy: {
-      createdAt: 'desc',
+      [sortField]: sortOrder,
     },
+
   });
 
-  // 3. Ambil total data
   const totalBooks = await prisma.book.count({ where: where });
   const totalPages = Math.ceil(totalBooks / limitNum);
 
   return {
+    message: 'Books fetched successfully', // <-- Tambahan
     data: books,
     meta: {
       currentPage: pageNum,
@@ -80,10 +89,9 @@ export const getAllBooks = async (options: BookQueryOptions) => {
   };
 };
 
-// Get By Id
 export const getBookById = async (id: string) => {
   const book = await prisma.book.findFirst({
-    where: { id: id, deletedAt: null }, // <-- Penting
+    where: { id: id, deletedAt: null },
     include: {
       genre: true,
     },
@@ -94,8 +102,16 @@ export const getBookById = async (id: string) => {
   return book;
 };
 
-// Update
 export const updateBook = async (id: string, data: any) => {
+  const existingBook = await prisma.book.findFirst({
+    where: { id: id, deletedAt: null },
+  });
+
+  if (!existingBook) {
+    throw new Error('Book not found');
+  }
+
+
   const book = await prisma.book.update({
     where: { id },
     data: {
@@ -112,11 +128,19 @@ export const updateBook = async (id: string, data: any) => {
   return book;
 };
 
-// Delete (Soft Delete)
+
 export const deleteBook = async (id: string) => {
-  // Kita update 'deletedAt' daripada benar-benar menghapus
+
+  const existingBook = await prisma.book.findFirst({
+    where: { id: id, deletedAt: null },
+  });
+
+  if (!existingBook) {
+    throw new Error('Book not found or already deleted');
+  }
+
   await prisma.book.update({
     where: { id },
     data: { deletedAt: new Date() },
   });
-};  
+};
