@@ -46,21 +46,22 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 };
 
 export const getAll = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { page, limit, search, sortBy, orderBy } = req.query;
-    const options = {
-      page: Number(page) || 1,
-      limit: Number(limit) || 10,
-      search: String(search || ''),
-      sortBy: String(sortBy || 'createdAt'),
-      orderBy: String(orderBy || 'desc'),
-    };
+  try {
+    const { page, limit, search, sortBy, orderBy, condition } = req.query;
+    const options = {
+      page: Number(page) || 1,
+      limit: Number(limit) || 10,
+      search: String(search || ''),
+      sortBy: String(sortBy || 'createdAt'),
+      orderBy: String(orderBy || 'desc'),
+      condition: String(condition || ''),
+    };
 
-    const result = await bookService.getAllBooks(options);
-    res.status(200).json(result);
-  } catch (error) {
-    next(error);
-  }
+    const result = await bookService.getAllBooks(options);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const getById = async (req: Request, res: Response, next: NextFunction) => {

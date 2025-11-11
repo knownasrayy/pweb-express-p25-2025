@@ -1,122 +1,178 @@
-// src/modules/transaction/transaction.service.ts
 import prisma from '../../prisma';
-
-// Import Prisma di service untuk menggunakan transaksi database
 import { Prisma } from '@prisma/client';
 
 interface ItemInput {
-  bookId: string;
-  quantity: number;
+  bookId: string;
+  quantity: number;
 }
 
-// Logika Transaksi: Beli Buku
+interface TransactionQueryOptions {
+  page?: number;
+  limit?: number;
+  search?: string;
+  sortBy?: string;
+  orderBy?: string;
+  userId: string;
+}
+
 export const createTransaction = async (userId: string, items: ItemInput[]) => {
-  // Transaksi Database: Memastikan semua operasi (cek stok, update stok, create order)
-  // berhasil atau gagal semua (Atomic)
-  const transactionResult = await prisma.$transaction(async (tx) => {
-    let totalAmount = 0;
-    const transactionDetailsData: Prisma.TransactionDetailCreateManyTransactionInput[] = [];
+  const transactionResult = await prisma.$transaction(async (tx) => {
+    let totalAmount = 0;
+    const transactionDetailsData: Prisma.TransactionDetailCreateManyTransactionInput[] = [];
 
-    for (const item of items) {
-      // 1. Cek Ketersediaan Buku
-      const book = await tx.book.findFirst({
-        where: { id: item.bookId, deletedAt: null },
-        select: { id: true, stockQuantity: true, price: true },
-      });
+    for (const item of items) {
+      const book = await tx.book.findFirst({
+        where: { id: item.bookId, deletedAt: null },
+        select: { id: true, stockQuantity: true, price: true },
+      });
 
-      if (!book) {
-        throw new Error(`Book with ID ${item.bookId} not found.`);
-      }
+      if (!book) {
+        throw new Error(`Book with ID ${item.bookId} not found.`);
+      }
 
-      // 2. Cek Stok (Bug Transaksi: Stok habis)
-      if (book.stockQuantity < item.quantity) {
-        // Error ini akan ditangkap oleh error.middleware karena mengandung 'stock'
-        throw new Error(`Insufficient stock for book ID ${item.bookId}. Current stock: ${book.stockQuantity}`);
-      }
+      if (book.stockQuantity < item.quantity) {
+        throw new Error(`Insufficient stock for book ID ${item.bookId}. Current stock: ${book.stockQuantity}`);
+      }
 
-      // 3. Hitung Subtotal dan Total
-      const subTotal = book.price * item.quantity;
-      totalAmount += subTotal;
+      const subTotal = book.price * item.quantity;
+      totalAmount += subTotal;
 
-      // 4. Kurangi Stok Buku
-      await tx.book.update({
-        where: { id: book.id },
-        data: {
-          stockQuantity: {
-            decrement: item.quantity,
-          },
-        },
-      });
+      await tx.book.update({
+        where: { id: book.id },
+        data: {
+          stockQuantity: {
+            decrement: item.quantity,
+          },
+        },
+      });
 
-      // 5. Siapkan Data Detail Transaksi
-      transactionDetailsData.push({
-        bookId: book.id,
-        quantity: item.quantity,
-        priceAtBuy: book.price, // Simpan harga saat ini (WAJIB)
-      });
-    }
+      transactionDetailsData.push({
+        bookId: book.id,
+        quantity: item.quantity,
+        priceAtBuy: book.price,
+      });
+    }
 
-    // 6. Buat Header Transaksi (Order)
-    const transaction = await tx.transaction.create({
-      data: {
-        userId: userId,
-        totalAmount: totalAmount, // Simpan total amount (WAJIB)
-        transactionItems: {
-          createMany: {
-            data: transactionDetailsData,
-          },
-        },
-      },
-      include: {
-        transactionItems: {
-          include: { book: { select: { title: true } } },
-        },
-      },
-    });
+    const transaction = await tx.transaction.create({
+      data: {
+        userId: userId,
+        totalAmount: totalAmount,
+        transactionItems: {
+          createMany: {
+            data: transactionDetailsData,
+          },
+        },
+      },
+      include: {
+        transactionItems: {
+          include: { book: { select: { title: true } } },
+        },
+      },
+    });
 
-    return transaction;
-  });
+    return transaction;
+  });
 
-  return transactionResult;
+  return transactionResult;
 };
 
-// Get All (Hanya untuk user yang login)
-export const getAllTransactionsByUserId = async (userId: string) => {
-  const transactions = await prisma.transaction.findMany({
-    where: { userId: userId },
-    orderBy: { createdAt: 'desc' },
-    include: {
-      user: { select: { username: true } },
-      transactionItems: {
-        include: { book: { select: { title: true } } },
-      },
-    },
-  });
+export const getAllTransactionsByUserId = async (options: TransactionQueryOptions) => {
+  const {
+    page = 1,
+    limit = 10,
+    search,
+    sortBy = 'createdAt',
+    orderBy = 'desc',
+    userId,
+  } = options;
 
-  if (transactions.length === 0) {
-    throw new Error('No transactions found for this user.');
-  }
+  const pageNum = Number(page);
+  const limitNum = Number(limit);
+  const skip = (pageNum - 1) * limitNum;
 
-  return transactions;
+  const where: Prisma.TransactionWhereInput = {
+    userId: userId,
+  };
+  if (search) {
+    where.id = {
+      contains: search,
+      mode: 'insensitive',
+    };
+  }
+
+  const allowedSortFields = ['id', 'totalAmount', 'createdAt'];
+  const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+  const sortOrder = orderBy.toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+  const transactions = await prisma.transaction.findMany({
+    where: where,
+    skip: skip,
+    take: limitNum,
+    include: {
+      user: { select: { username: true } },
+      transactionItems: {
+        include: { book: { select: { title: true } } },
+      },
+    },
+    orderBy: {
+      [sortField]: sortOrder,
+    },
+  });
+  
+  const totalTransactions = await prisma.transaction.count({ where: where });
+  const totalPages = Math.ceil(totalTransactions / limitNum);
+
+  return {
+    data: transactions,
+    meta: {
+      currentPage: pageNum,
+      totalPages: totalPages,
+      totalItems: totalTransactions,
+      limit: limitNum,
+    },
+  };
 };
 
-// Rata-rata Nominal Tiap Transaksi (WAJIB)
+export const getTransactionById = async (transactionId: string, userId: string) => {
+  const transaction = await prisma.transaction.findFirst({
+    where: {
+      id: transactionId,
+      userId: userId,
+    },
+    include: {
+      transactionItems: {
+        include: {
+          book: {
+            select: { id: true, title: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!transaction) {
+    throw new Error('Transaction not found or you do not have permission to view it.');
+  }
+
+  return transaction;
+};
+
 export const getAverageTransactionAmount = async () => {
-  const result = await prisma.transaction.aggregate({
-    _avg: {
-      totalAmount: true,
-    },
-    _sum: {
-      totalAmount: true,
-    },
-    _count: {
-      id: true,
-    }
-  });
+  const result = await prisma.transaction.aggregate({
+    _avg: {
+      totalAmount: true,
+    },
+    _sum: {
+      totalAmount: true,
+    },
+    _count: {
+      id: true,
+    }
+  });
 
-  return {
-    average: result._avg.totalAmount || 0,
-    totalCount: result._count.id,
-    totalSum: result._sum.totalAmount || 0,
-  };
+  return {
+    average: result._avg.totalAmount || 0,
+    totalCount: result._count.id,
+    totalSum: result._sum.totalAmount || 0,
+  };
 };

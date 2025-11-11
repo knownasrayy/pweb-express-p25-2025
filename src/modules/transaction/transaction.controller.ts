@@ -37,14 +37,35 @@ export const createTransaction = async (req: AuthenticatedRequest, res: Response
 };
 
 export const getAllTransactions = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    // Hanya ambil transaksi milik user yang login (sesuai best practice)
-    const userId = req.user.id; 
-    const transactions = await transactionService.getAllTransactionsByUserId(userId);
-    res.status(200).json({ message: 'Transactions fetched successfully', data: transactions });
-  } catch (error) {
-    next(error);
-  }
+  try {
+    const userId = req.user.id;
+    const { page, limit, search, sortBy, orderBy } = req.query;
+
+    const options = {
+      page: Number(page) || 1,
+      limit: Number(limit) || 10,
+      search: String(search || ''),
+      sortBy: String(sortBy || 'createdAt'),
+      orderBy: String(orderBy || 'desc'),
+      userId: userId,
+    };
+
+    const result = await transactionService.getAllTransactionsByUserId(options);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getById = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const transaction = await transactionService.getTransactionById(id, userId);
+    res.status(200).json({ message: 'Transaction detail fetched successfully', data: transaction });
+  } catch (error) {
+    next(error);
+  }
 };
 
 // Endpoint baru untuk menghitung rata-rata nominal tiap transaksi

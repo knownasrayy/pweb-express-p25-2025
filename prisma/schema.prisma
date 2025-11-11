@@ -31,23 +31,27 @@ model Genre {
 }
 
 model Book {
-  id              String  @id @default(uuid())
-  title           String  @unique
+  id              String    @id @default(uuid())
+  title           String    @unique
   writer          String
   publisher       String
   publicationYear Int
   description     String?
   price           Float
-  stockQuantity   Int     @default(0)
+  stockQuantity   Int       @default(0)
+  isbn            String?
+  condition       String?
+
+  image_url       String?
 
   genreId String
-  genre   Genre  @relation(fields: [genreId], references: [id], onDelete: Restrict) // 'Restrict' mencegah genre dihapus jika buku masih ada
+  genre   Genre  @relation(fields: [genreId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  deletedAt DateTime? // Untuk soft delete
+  deletedAt DateTime?
 
-  transactionItems TransactionDetail[] // Relasi ke TransactionDetail (order_items)
+  transactionItems TransactionDetail[]
 }
 
 // Model ini adalah tabel 'orders' Anda
